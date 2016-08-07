@@ -104,10 +104,21 @@ class DeviceConnectionHandler(Process):
 					server.rport = 8080
 
 					server.start()
-					self.devices[dev] = server
-					self.device_id_map[dev.serial] = server.server_address
-					
+
+					# create ssh connection tunnel via USBMux
+					server2 = DeviceServer(self.mux, dev, ('localhost', 0), DeviceTCPRelay)
+					server2.rport = 22
+
+					server2.start()
+
+					self.devices[dev] = [server, server2]
+					self.device_id_map[dev.serial] = {
+						'http':	server.server_address,
+						'ssh':	server2.server_address
+					}
+
 					_LOGGER.debug("Serving device %s via %s" % (str(dev), server.server_address))
+					_LOGGER.debug("Serving device ssh %s via %s" % (str(dev), server2.server_address))
 	
 					
 			#remove invalid devices
@@ -118,6 +129,10 @@ class DeviceConnectionHandler(Process):
 					server.stop()
 					server.join(_JOIN_TIMEOUT)
 					_LOGGER.debug("Server stopped: %s" % server)
+					_LOGGER.debug("Server: %s" % server2)
+					server2.stop()
+					server2.join(_JOIN_TIMEOUT)
+					_LOGGER.debug("Server stopped: %s" % server2)
 					self.devices.pop(dev)
 					self.device_id_map.pop(dev.serial)
 			
@@ -136,9 +151,10 @@ class DeviceConnectionHandler(Process):
 		self.handle()
 		
 		_LOGGER.debug("stopping device servers...")
-		for server in self.devices.itervalues():
-			server.stop()
-			server.join(_JOIN_TIMEOUT)
+		for servers in self.devices.itervalues():
+			for server in servers:
+				server.stop()
+				server.join(_JOIN_TIMEOUT)
 		_LOGGER.debug("%s will exit now" % (str(self)))
 		
 	def device_connection_info(self, deviceUUID):

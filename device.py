@@ -92,10 +92,16 @@ class iDevice(object):
 		'''
 		baseUrl = None
 		device_handler = deviceconnection.shared_device_handler()
-		conn_tuple = device_handler.device_connection_info(self.udid)
+		conn_tuple = device_handler.device_connection_info(self.udid)['http']
 		if conn_tuple:
 			baseUrl = "http://%s:%s/" % conn_tuple
 		return baseUrl
+
+	def _ssh_connection_info(self):
+		''' the devices connection info to access the device via ssh tunneled via USB '''
+		baseUrl = None
+		device_handler = deviceconnection.shared_device_handler()
+		return device_handler.device_connection_info(self.udid)['ssh']
 
 
 ### more device informations
