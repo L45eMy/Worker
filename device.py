@@ -273,3 +273,55 @@ class iDevice(object):
 			result=False
 		return result
 
+
+###### SSH stuff
+
+	def _assert_ssh_key_exists(self):
+		if not os.path.isfile("keys/%s" % self.udid):
+			logger.error("SSH keyfile missing for device %s", self.udid)
+			raise Exception("SSH keyfile missing for device %s", self.udid)
+
+	def ssh_cmd(self, command):
+		''' executes command on device via ssh and returns result '''
+		self._assert_ssh_key_exists()
+
+		(host, port) = self._ssh_connection_info()
+		options = [
+			"ssh",
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "StrictHostKeyChecking=no",
+			"-p", str(port),
+			"-i", "keys/%s" % self.udid,
+			"root@%s" % host,
+			"'" + command + "'"
+		]
+
+		try:
+			output = subprocess.check_output(options)
+			return output
+		except subprocess.CalledProcessError as e:
+			logger.error('executing ssh command %s failed with: %s <output: %s>', command, e, output)
+
+	def ssh_copy_from(self, remote_path, local_path):
+		''' copies files (recursively) matching remote_path expression to local_path via scp '''
+		self._assert_ssh_key_exists()
+		
+		(host, port) = self._ssh_connection_info()
+		options = [
+			"scp",
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "StrictHostKeyChecking=no",
+			"-P", str(port),
+			"-i", "keys/%s" % self.udid,
+			"-r",
+			"root@%s:%s" % (host, remote_path),
+			local_path
+		]
+		
+		try:
+			output = subprocess.check_output(options)
+			logger.debug('scp output: %s' % output)
+			return True
+		except subprocess.CalledProcessError as e:
+			logger.error('scp for %s failed with: %s <output: %s>', remote_path, e, output)
+			return False

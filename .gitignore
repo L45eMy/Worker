@@ -1,1 +1,3 @@
 **/*.pyc
+keys/*
+!keys/README.md
