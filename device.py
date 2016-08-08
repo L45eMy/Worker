@@ -293,7 +293,7 @@ class iDevice(object):
 			"-p", str(port),
 			"-i", "keys/%s" % self.udid,
 			"root@%s" % host,
-			"'" + command + "'"
+			command
 		]
 
 		try:
