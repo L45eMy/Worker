@@ -288,6 +288,7 @@ class iDevice(object):
 		(host, port) = self._ssh_connection_info()
 		options = [
 			"ssh",
+			"-q",
 			"-o", "UserKnownHostsFile=/dev/null",
 			"-o", "StrictHostKeyChecking=no",
 			"-p", str(port),
@@ -309,6 +310,7 @@ class iDevice(object):
 		(host, port) = self._ssh_connection_info()
 		options = [
 			"scp",
+			"-q",
 			"-o", "UserKnownHostsFile=/dev/null",
 			"-o", "StrictHostKeyChecking=no",
 			"-P", str(port),
@@ -320,7 +322,6 @@ class iDevice(object):
 		
 		try:
 			output = subprocess.check_output(options)
-			logger.debug('scp output: %s' % output)
 			return True
 		except subprocess.CalledProcessError as e:
 			logger.error('scp for %s failed with: %s <output: %s>', remote_path, e, output)
