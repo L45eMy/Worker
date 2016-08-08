@@ -2,11 +2,15 @@
 import os
 import logging
 import base64
+import pickle
+import shutil
 import time
+import tempfile
 
 from enum import Enum
 from store import AppStore, AppStoreException
 from pilot import Pilot
+from static_analyzer.analysis import Analysis
 
 logger = logging.getLogger('worker.'+__name__)
 
@@ -17,7 +21,7 @@ class JobExecutionError(Exception):
 class Job(object):
 
 	STATE = Enum([u'undefined', u'pending', u'running', u'finished', u'failed'])
-	TYPE = Enum([u'run_app', u'install_app', u'exec_cmd'])
+	TYPE = Enum([u'run_app', u'install_app', u'exec_cmd', u'dioscope'])
 
 	def __init__(self, backend, device, jobDict):
 		self.jobDict = jobDict
@@ -422,6 +426,101 @@ class ExecuteCmdJob(Job):
 			raise JobExecutionError("Process or command missing")
 
 
+class DioscopeJob(RunAppJob):
+	
+	def __init__(self, backend, device, jobDict):
+		super(DioscopeJob, self).__init__(backend, device, jobDict)
+
+	def _analyze(self, runId):
+		jobInfo = self.jobDict['jobInfo']
+		bundleId = jobInfo['bundleId']
+
+		dir_name = "dioscope_%s" % bundleId
+		remote_tempdir = os.path.join("/tmp", dir_name)
+		local_tempdir = tempfile.mkdtemp()
+
+		output = self.device.ssh_cmd("[ -f %s/done ] || echo not finished" % remote_tempdir)
+		while len(output) != 0:
+			logger.info("Dioscope Startup Analyzer is %s yet, waiting...", output.strip())
+			time.sleep(15)
+			output = self.device.ssh_cmd("[ -f %s/done ] || echo not finished" % remote_tempdir)
+
+		self.device.ssh_copy_from(remote_tempdir, local_tempdir)
+		self.device.ssh_cmd("rm -r %s" % remote_tempdir)
+
+		analyze_dir = os.path.join(local_tempdir, dir_name)
+
+		logger.info("Dioscope Static Analysis started in %s...", local_tempdir)
+		analysis = Analysis(analyze_dir)
+		logger.info("Dioscope Static Analysis finished, posting results to backend...")
+
+		serialized_dump = pickle.dumps(analysis)
+		encoded_dump = base64.b64encode(serialized_dump)
+
+		self.backend.post_result(runId, "dioscope_static", encoded_dump)
+
+		shutil.rmtree(local_tempdir)
+	
+	def execute(self):
+		
+		logger.info("executing DioscopeJob %s on device %s" % (self.jobId, self.device))
+
+		backendJobData = self.backend.get_job(self.jobId)
+		## set job running
+		backendJobData['state'] = Job.STATE.RUNNING
+		self.backend.post_job(backendJobData)
+
+		pilot = Pilot(self.device.base_url())
+
+		try:
+			installDone = self._install_app(pilot)
+			if not self.appId:
+				raise JobExecutionError("No appId present")
+
+			jobInfo = self.jobDict['jobInfo']
+			bundleId = jobInfo['bundleId']
+
+			if self.device.ios_version()[0] > 8:
+				logger.debug("skipping app archiving since device is running iOS 9 or later")
+			else:
+				if not self.backend.has_app_archive(self.appId):
+					self._archive_app_binary(bundleId)
+
+			executionStrategy = None
+			if 'executionStrategy' in jobInfo:
+				executionStrategy = jobInfo['executionStrategy']
+				
+			logger.debug('post_run')
+			## add run to backend
+			runId = self.backend.post_run(self.appId, self.backend.RUN_STATE.RUNNING)
+			
+			logger.info('starting app pilot execution')
+			self._execute_app(pilot, bundleId, runId, executionStrategy)
+
+			if installDone:
+				logger.info("uninstalling app (%s)" % bundleId)
+				self.device.uninstall(bundleId)
+			# # save the results and install the app if not previously installed
+			# self._save_run_results(runId, bundleId, uninstallApp=installDone)
+
+			## set run finished
+			self.backend.post_run(self.appId, self.backend.RUN_STATE.FINISHED, runId=runId, executionStrategy=executionStrategy)
+
+			self._analyze(runId)
+
+		except JobExecutionError, e:
+			logger.error("Job execution failed: %s" % str(e))
+			backendJobData['state'] = Job.STATE.FAILED
+			self.backend.post_job(backendJobData)
+			return False
+
+		## set job finished
+		backendJobData['state'] = Job.STATE.FINISHED
+		self.backend.post_job(backendJobData)
+
+		return True
+
+
 class JobFactory(object):
 
 	@classmethod
@@ -435,6 +534,8 @@ class JobFactory(object):
 				job = InstallAppJob(backend, device, jobDict)
 			elif jobType == Job.TYPE.EXEC_CMD:
 				job = ExecuteCmdJob(backend, device, jobDict)
+			elif jobType == Job.TYPE.DIOSCOPE:
+				job = DioscopeJob(backend, device, jobDict)
 		else:
 			logger.error('jobDict does not contain a type!')
 		if job:
