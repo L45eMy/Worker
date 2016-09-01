@@ -46,7 +46,7 @@ class InstallAppJob(Job):
 		self.appId = None
 
 	def _archive_app_binary(self, bundleId):
-		logger.debug('archiving %s' % bundleId)
+		logger.info('archiving %s' % bundleId)
 		try:
 			### add app binary to backend
 			self.device.archive(bundleId, self.APP_ARCHIVE_PATH, app_only=True)
@@ -116,7 +116,7 @@ class InstallAppJob(Job):
 				return False
 
 			# case 2: install from backend
-			elif self.appId:
+			elif self.appId and False:
 				# install from backend
 				
 				# dirty check for ipa-size < ~50MB
@@ -249,7 +249,7 @@ class InstallAppJob(Job):
 			jobInfo = self.jobDict['jobInfo']
 			bundleId = jobInfo['bundleId']
 	
-			if self.device.ios_version()[0] > 8:
+			if True or self.device.ios_version()[0] > 8:
 				logger.debug("skipping app archiving since device is running iOS 9 or later")
 			else:
 				logger.debug("check if backend already has an app ipa")
@@ -304,7 +304,9 @@ class RunAppJob(Job):
 	
 
 	def _archive_app_binary(self, bundleId):
-		logger.debug('archiving %s' % bundleId)
+		return
+
+		logger.info('archiving %s' % bundleId)
 		try:
 			### add app binary to backend
 			self.device.archive(bundleId, self.APP_ARCHIVE_PATH, app_only=True)
@@ -369,7 +371,7 @@ class RunAppJob(Job):
 			jobInfo = self.jobDict['jobInfo']
 			bundleId = jobInfo['bundleId']
 
-			if self.device.ios_version()[0] > 8:
+			if True or self.device.ios_version()[0] > 8:
 				logger.debug("skipping app archiving since device is running iOS 9 or later")
 			else:
 				if not self.backend.has_app_archive(self.appId):
@@ -497,6 +499,8 @@ class DioscopeJob(RunAppJob):
 			logger.info('starting app pilot execution')
 			self._execute_app(pilot, bundleId, runId, executionStrategy)
 
+			self._analyze(runId)
+
 			if installDone:
 				logger.info("uninstalling app (%s)" % bundleId)
 				self.device.uninstall(bundleId)
@@ -505,8 +509,6 @@ class DioscopeJob(RunAppJob):
 
 			## set run finished
 			self.backend.post_run(self.appId, self.backend.RUN_STATE.FINISHED, runId=runId, executionStrategy=executionStrategy)
-
-			self._analyze(runId)
 
 		except JobExecutionError, e:
 			logger.error("Job execution failed: %s" % str(e))
