@@ -39,6 +39,9 @@ class DeviceLoop(Process):
 		self.backend.register_device(self.device)
 
 		logger.info("entering device loop: %s" % str(self.device))
+
+		times = []
+
 		while not self.stopped():
 			
 			free_bytes = self.device.free_bytes()
@@ -58,7 +61,14 @@ class DeviceLoop(Process):
 				if job:
 					logger.info('Executing Job %s' % str(job))
 					try:
+						start = time.time()
+
 						job.execute()
+						
+						duration = time.time() - start
+						times.append(duration)
+						logger.info('*** Worker Stats for %s: %s jobs, %ss/job' % (str(self.device), len(times), sum(times) / float(len(times))))
+						
 					except requests.ConnectionError as e:
 						logger.error("Executing job failed: %s" % e)
 						tb = traceback.format_exc()
